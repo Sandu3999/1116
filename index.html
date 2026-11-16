@@ -1,0 +1,205 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot & Wolf VR</title>
+
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/projapayuri/aframe-vr-kit@v0.2.0/vr-kit.js"></script>
+
+    <style>
+        #hud {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 999;
+            padding: 12px;
+        }
+
+        select {
+            font-size: 18px;
+            padding: 8px;
+            width: 200px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="hud">
+        <select id="avatarChoice">
+            <option value="robot.glb">ロボット</option>
+            <option value="wolf.glb">狼</option>
+        </select>
+    </div>
+
+    <a-scene>
+        <a-sky color="lightblue"></a-sky>
+
+        <a-plane
+            rotation="-90 0 0"
+            width="30"
+            height="30"
+            color="darkseagreen">
+        </a-plane>
+
+        <a-entity
+            id="avatar"
+            gltf-model="robot.glb"
+            position="0 0 -3"
+            scale="0.3 0.3 0.3">
+        </a-entity>
+
+        <a-box color="gold" position="0 2 -5"></a-box>
+
+        <a-entity
+            id="camera"
+            camera
+            position="0 2 4"
+            look-controls="enabled: false">
+        </a-entity>
+    </a-scene>
+
+    <script>
+        const avatar = document.getElementById("avatar");
+        const avatarChoice = document.getElementById("avatarChoice");
+        const camera = document.getElementById("camera");
+
+        const keys = {};
+        const speed = 3;
+        const clock = new THREE.Clock();
+
+        let mixer = null;
+        let actions = {};
+        let currentAnimation = "";
+        let moving = false;
+
+        const animations = {
+            "robot.glb": {
+                walk: "Robot_Walking",
+                idle: "Robot_Wave"
+            },
+            "wolf.glb": {
+                walk: "Gallop",
+                idle: "Idle"
+            }
+        };
+
+        function playAnimation(name) {
+            if (!mixer || !actions[name]) return;
+            if (currentAnimation === name) return;
+
+            const previous = actions[currentAnimation];
+            const next = actions[name];
+
+            if (previous) {
+                previous.fadeOut(0.2);
+            }
+
+            next.reset();
+            next.fadeIn(0.2);
+            next.play();
+
+            currentAnimation = name;
+        }
+
+        avatar.addEventListener("model-loaded", (event) => {
+            if (mixer) {
+                mixer.stopAllAction();
+            }
+
+            mixer = null;
+            actions = {};
+            currentAnimation = "";
+
+            const model = event.detail.model;
+            const clips = model.animations || [];
+
+            mixer = new THREE.AnimationMixer(model);
+
+            clips.forEach((clip) => {
+                actions[clip.name] = mixer.clipAction(clip);
+            });
+
+            const config = animations[avatarChoice.value];
+            playAnimation(moving ? config.walk : config.idle);
+        });
+
+        function changeAvatar() {
+            const selected = avatarChoice.value;
+
+            if (selected === "wolf.glb") {
+                avatar.setAttribute("scale", "0.5 0.5 0.5");
+            } else {
+                avatar.setAttribute("scale", "0.3 0.3 0.3");
+            }
+
+            mixer = null;
+            actions = {};
+            currentAnimation = "";
+
+            avatar.setAttribute("gltf-model", selected);
+        }
+
+        avatarChoice.addEventListener("change", changeAvatar);
+
+        document.addEventListener("keydown", (e) => {
+            if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code)) {
+                keys[e.code] = true;
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener("keyup", (e) => {
+            keys[e.code] = false;
+        });
+
+        window.addEventListener("blur", () => {
+            Object.keys(keys).forEach(key => keys[key] = false);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = Math.min(clock.getDelta(), 0.05);
+            const position = avatar.object3D.position;
+
+            const direction = new THREE.Vector3();
+
+            if (keys.KeyW) direction.z -= 1;
+            if (keys.KeyS) direction.z += 1;
+            if (keys.KeyA) direction.x -= 1;
+            if (keys.KeyD) direction.x += 1;
+
+            moving = direction.lengthSq() > 0;
+
+            if (moving) {
+                direction.normalize();
+
+                position.x += direction.x * speed * delta;
+                position.z += direction.z * speed * delta;
+
+                avatar.object3D.rotation.y =
+                    Math.atan2(-direction.x, -direction.z);
+            }
+
+            const config = animations[avatarChoice.value];
+
+            playAnimation(moving ? config.walk : config.idle);
+
+            if (mixer) {
+                mixer.update(delta);
+            }
+
+            camera.object3D.position.set(
+                position.x,
+                position.y + 2.5,
+                position.z + 5
+            );
+        }
+
+        animate();
+    </script>
+</body>
+</html>
